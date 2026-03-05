@@ -27,8 +27,22 @@ export async function generateMathProblems(
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error || "Failed to fetch problems");
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `Error ${response.status}: Failed to fetch problems`);
+    } else {
+      const text = await response.text();
+      console.error("Non-JSON error response:", text);
+      throw new Error(`Server error (${response.status}). Please try again later.`);
+    }
+  }
+
+  const contentType = response.headers.get("content-type");
+  if (!contentType || !contentType.includes("application/json")) {
+    const text = await response.text();
+    console.error("Expected JSON but got:", text);
+    throw new Error("Received invalid response from server. Please try again.");
   }
 
   return response.json();

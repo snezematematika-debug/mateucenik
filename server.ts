@@ -57,8 +57,16 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json());
 
+// Health check route
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", vercel: !!process.env.VERCEL });
+});
+
+// API Router to handle both /api and root mounts
+const apiRouter = express.Router();
+
 // API Route for user progress
-app.get("/api/user/:username", (req, res) => {
+apiRouter.get("/user/:username", (req, res) => {
   if (!db) return res.status(503).json({ error: "Database not available" });
   
   const { username } = req.params;
@@ -75,7 +83,7 @@ app.get("/api/user/:username", (req, res) => {
   }
 });
 
-app.post("/api/user/progress", (req, res) => {
+apiRouter.post("/user/progress", (req, res) => {
   if (!db) return res.status(503).json({ error: "Database not available" });
   
   const { username, xp, total_score, level } = req.body;
@@ -92,7 +100,7 @@ app.post("/api/user/progress", (req, res) => {
 });
 
 // API Route for game history
-app.post("/api/history", (req, res) => {
+apiRouter.post("/history", (req, res) => {
   if (!db) return res.status(503).json({ error: "Database not available" });
   
   const { username, game_type, score, xp_gained, grade, topic, content } = req.body;
@@ -107,7 +115,7 @@ app.post("/api/history", (req, res) => {
   }
 });
 
-app.get("/api/history/:username", (req, res) => {
+apiRouter.get("/history/:username", (req, res) => {
   if (!db) return res.status(503).json({ error: "Database not available" });
   
   const { username } = req.params;
@@ -119,7 +127,7 @@ app.get("/api/history/:username", (req, res) => {
   }
 });
 
-app.get("/api/leaderboard", (req, res) => {
+apiRouter.get("/leaderboard", (req, res) => {
   if (!db) return res.status(503).json({ error: "Database not available" });
   
   try {
@@ -131,7 +139,7 @@ app.get("/api/leaderboard", (req, res) => {
 });
 
 // API Route for generating problems
-app.post("/api/problems", async (req, res) => {
+apiRouter.post("/problems", async (req, res) => {
     const { grade, topic, content, count, customApiKey } = req.body;
     const apiKey = customApiKey || process.env.GEMINI_API_KEY;
 
@@ -208,6 +216,15 @@ app.post("/api/problems", async (req, res) => {
     }
   });
 
+// Mount the router
+app.use("/api", apiRouter);
+app.use("/", apiRouter); // Fallback for rewrites
+
+// Catch-all for API routes to return JSON instead of HTML
+app.all("/api/*", (req, res) => {
+  res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
+});
+
 // Vite middleware for development
 if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
   const { createServer: createViteServer } = await import("vite");
@@ -216,7 +233,8 @@ if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
     appType: "spa",
   });
   app.use(vite.middlewares);
-} else {
+} else if (!process.env.VERCEL) {
+  // Only serve static files if NOT on Vercel (Vercel handles this via rewrites)
   app.use(express.static(path.join(__dirname, "dist")));
   app.get("*", (req, res) => {
     res.sendFile(path.join(__dirname, "dist", "index.html"));
