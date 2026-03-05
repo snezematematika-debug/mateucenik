@@ -1,31 +1,33 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import cors from "cors";
 import { GoogleGenAI, Type } from "@google/genai";
-import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-let db: any;
-try {
-  db = new Database("cache.db");
-  // Initialize database
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS math_cache (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      grade TEXT,
-      topic TEXT,
-      content TEXT,
-      problems TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-} catch (e) {
-  console.warn("SQLite database could not be initialized. Caching will be disabled or in-memory only.");
-  db = null;
+let db: any = null;
+
+// Initialize database only if not on Vercel (SQLite doesn't work well there)
+if (!process.env.VERCEL) {
+  try {
+    // Dynamic import to avoid issues in environments where better-sqlite3 isn't available
+    const Database = (await import("better-sqlite3")).default;
+    db = new Database("cache.db");
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS math_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        grade TEXT,
+        topic TEXT,
+        content TEXT,
+        problems TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  } catch (e) {
+    console.warn("SQLite database could not be initialized. Caching will be disabled.");
+  }
 }
 
 export const app = express();
@@ -114,6 +116,7 @@ app.post("/api/problems", async (req, res) => {
 
 // Vite middleware for development
 if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+  const { createServer: createViteServer } = await import("vite");
   const vite = await createViteServer({
     server: { middlewareMode: true },
     appType: "spa",
