@@ -339,12 +339,16 @@ export default function App() {
               exit={{ opacity: 0, scale: 0.9 }}
               className="max-w-md mx-auto bg-white p-8 rounded-3xl border-2 border-slate-200 shadow-xl text-center space-y-6"
             >
-              <div className="w-20 h-20 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto">
-                <Brain size={48} />
-              </div>
-              <div className="space-y-2">
-                <h2 className="text-3xl font-display font-bold text-slate-900">Добредојде!</h2>
-                <p className="text-slate-600">Внеси го твоето име за да го зачуваме твојот напредок.</p>
+              <div className="space-y-4">
+                <div className="w-24 h-24 bg-indigo-600 rounded-3xl mx-auto flex items-center justify-center text-white shadow-2xl shadow-indigo-200 transform -rotate-6 hover:rotate-0 transition-transform duration-500">
+                  <Sparkles size={48} />
+                </div>
+                <h1 className="text-4xl font-display font-bold text-slate-900 tracking-tight">
+                  Снеже Математика
+                </h1>
+                <p className="text-lg text-slate-600 font-medium">
+                  Твојот паметен пријател за учење математика преку игра! 🚀
+                </p>
               </div>
               
               {username && (
