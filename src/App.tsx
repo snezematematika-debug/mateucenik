@@ -47,7 +47,10 @@ function cn(...inputs: ClassValue[]) {
 type GameType = 'flashcards' | 'bingo' | 'escape';
 
 export default function App() {
-  const [username, setUsername] = useState<string | null>(() => localStorage.getItem('math_username'));
+  const [username, setUsername] = useState<string | null>(() => {
+    const saved = localStorage.getItem('math_username');
+    return (saved && saved.trim()) ? saved.trim() : null;
+  });
   const [step, setStep] = useState<'welcome' | 'grade' | 'topic' | 'content' | 'game-selection' | 'playing'>(username ? 'grade' : 'welcome');
   const [selectedGrade, setSelectedGrade] = useState<Grade | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
@@ -269,21 +272,26 @@ export default function App() {
             </button>
 
             {username && (
-              <div className="hidden sm:flex items-center gap-3 px-3 py-1.5 bg-slate-100 rounded-full border border-slate-200">
-                <div className="flex items-center gap-1.5 text-slate-600 font-bold">
-                  <User size={16} />
-                  <span className="text-sm">{username}</span>
+              <div className="flex items-center gap-2 sm:gap-4">
+                <div className="hidden md:flex items-center gap-3 px-3 py-1.5 bg-slate-100 rounded-full border border-slate-200">
+                  <div className="flex items-center gap-1.5 text-slate-600 font-bold">
+                    <User size={16} />
+                    <span className="text-sm">{username}</span>
+                  </div>
+                  <div className="w-px h-4 bg-slate-300" />
+                  <div className="flex items-center gap-1.5 text-amber-600 font-bold">
+                    <Trophy size={16} />
+                    <span className="text-sm">{totalScore}</span>
+                  </div>
                 </div>
-                <div className="w-px h-4 bg-slate-300" />
-                <div className="flex items-center gap-1.5 text-amber-600 font-bold">
-                  <Trophy size={16} />
-                  <span className="text-sm">{totalScore}</span>
-                </div>
-                <div className="w-px h-4 bg-slate-300" />
-                <div className="flex items-center gap-1.5 text-indigo-600 font-bold">
-                  <Sparkles size={16} />
-                  <span className="text-sm">Ниво {userLevel}</span>
-                </div>
+                
+                <button 
+                  onClick={logout}
+                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                  title="Одјави се"
+                >
+                  <LogOut size={20} />
+                </button>
               </div>
             )}
             
@@ -338,6 +346,40 @@ export default function App() {
                 <h2 className="text-3xl font-display font-bold text-slate-900">Добредојде!</h2>
                 <p className="text-slate-600">Внеси го твоето име за да го зачуваме твојот напредок.</p>
               </div>
+              
+              {username && (
+                <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white">
+                      <User size={20} />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-xs text-indigo-600 font-bold uppercase tracking-wider">Продолжи како</p>
+                      <p className="font-bold text-slate-900">{username}</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setStep('grade')}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-sm"
+                  >
+                    Играј
+                  </button>
+                </div>
+              )}
+
+              <div className={cn("relative", username && "pt-4")}>
+                {username && (
+                  <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                    <div className="w-full border-t border-slate-200"></div>
+                  </div>
+                )}
+                {username && (
+                  <div className="relative flex justify-center text-sm">
+                    <span className="px-2 bg-white text-slate-500 font-medium">или нов ученик</span>
+                  </div>
+                )}
+              </div>
+
               <form onSubmit={(e) => {
                 e.preventDefault();
                 const name = (e.currentTarget.elements.namedItem('username') as HTMLInputElement).value;

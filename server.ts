@@ -9,10 +9,9 @@ const __dirname = path.dirname(__filename);
 
 let db: any = null;
 
-// Initialize database only if not on Vercel (SQLite doesn't work well there)
+// Initialize database only if not on Vercel
 if (!process.env.VERCEL) {
   try {
-    // Dynamic import to avoid issues in environments where better-sqlite3 isn't available
     const Database = (await import("better-sqlite3")).default;
     db = new Database("cache.db");
     db.exec(`
@@ -24,7 +23,6 @@ if (!process.env.VERCEL) {
         problems TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
-      
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE,
@@ -33,7 +31,6 @@ if (!process.env.VERCEL) {
         level INTEGER DEFAULT 1,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
-
       CREATE TABLE IF NOT EXISTS history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT,
@@ -47,7 +44,7 @@ if (!process.env.VERCEL) {
       );
     `);
   } catch (e) {
-    console.warn("SQLite database could not be initialized. Caching and user progress will be disabled.");
+    console.warn("SQLite database could not be initialized.");
   }
 }
 
@@ -57,23 +54,19 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json());
 
-// Health check route
-app.get("/api/health", (req, res) => {
+// API Router
+const apiRouter = express.Router();
+
+apiRouter.get("/health", (req, res) => {
   res.json({ status: "ok", vercel: !!process.env.VERCEL });
 });
 
-// API Router to handle both /api and root mounts
-const apiRouter = express.Router();
-
-// API Route for user progress
 apiRouter.get("/user/:username", (req, res) => {
   if (!db) return res.status(503).json({ error: "Database not available" });
-  
   const { username } = req.params;
   try {
     let user = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
     if (!user) {
-      // Create user if not exists
       db.prepare("INSERT INTO users (username) VALUES (?)").run(username);
       user = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
     }
@@ -85,30 +78,22 @@ apiRouter.get("/user/:username", (req, res) => {
 
 apiRouter.post("/user/progress", (req, res) => {
   if (!db) return res.status(503).json({ error: "Database not available" });
-  
   const { username, xp, total_score, level } = req.body;
   try {
-    db.prepare(`
-      UPDATE users 
-      SET xp = ?, total_score = ?, level = ?, updated_at = CURRENT_TIMESTAMP 
-      WHERE username = ?
-    `).run(xp, total_score, level, username);
+    db.prepare("UPDATE users SET xp = ?, total_score = ?, level = ?, updated_at = CURRENT_TIMESTAMP WHERE username = ?")
+      .run(xp, total_score, level, username);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: "Database error" });
   }
 });
 
-// API Route for game history
 apiRouter.post("/history", (req, res) => {
   if (!db) return res.status(503).json({ error: "Database not available" });
-  
   const { username, game_type, score, xp_gained, grade, topic, content } = req.body;
   try {
-    db.prepare(`
-      INSERT INTO history (username, game_type, score, xp_gained, grade, topic, content)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(username, game_type, score, xp_gained, grade, topic, content);
+    db.prepare("INSERT INTO history (username, game_type, score, xp_gained, grade, topic, content) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(username, game_type, score, xp_gained, grade, topic, content);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: "Database error" });
@@ -117,7 +102,6 @@ apiRouter.post("/history", (req, res) => {
 
 apiRouter.get("/history/:username", (req, res) => {
   if (!db) return res.status(503).json({ error: "Database not available" });
-  
   const { username } = req.params;
   try {
     const history = db.prepare("SELECT * FROM history WHERE username = ? ORDER BY created_at DESC LIMIT 20").all();
@@ -129,7 +113,6 @@ apiRouter.get("/history/:username", (req, res) => {
 
 apiRouter.get("/leaderboard", (req, res) => {
   if (!db) return res.status(503).json({ error: "Database not available" });
-  
   try {
     const topUsers = db.prepare("SELECT username, xp, level, total_score FROM users ORDER BY xp DESC LIMIT 10").all();
     res.json(topUsers);
@@ -138,112 +121,52 @@ apiRouter.get("/leaderboard", (req, res) => {
   }
 });
 
-// API Route for generating problems
 apiRouter.post("/problems", async (req, res) => {
-    const { grade, topic, content, count, customApiKey } = req.body;
-    const apiKey = customApiKey || process.env.GEMINI_API_KEY;
+  const { grade, topic, content, count, customApiKey } = req.body;
+  const apiKey = customApiKey || process.env.GEMINI_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: "API Key is missing" });
 
-    if (!apiKey) {
-      return res.status(400).json({ error: "API Key is missing" });
-    }
-
-    // Check cache first
-    let cached: any = null;
-    if (db) {
-      try {
-        cached = db.prepare("SELECT problems FROM math_cache WHERE grade = ? AND topic = ? AND content = ?")
-          .get(grade, topic, content);
-      } catch (e) {
-        console.error("Cache read error:", e);
-      }
-    }
-
-    if (cached) {
-      console.log("Serving from cache...");
-      const problems = JSON.parse(cached.problems);
-      // If we need more than we have, we might need to regenerate, but for now just return what we have
-      return res.json(problems.slice(0, count));
-    }
-
-    console.log("Generating new problems with Gemini...");
-    try {
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Генерирај ${count || 10} математички задачи за ${grade} одделение, на тема "${topic}" и содржина "${content}". 
-        Задачите треба да бидат на македонски јазик и соодветни за возраста.
-        ВАЖНО: Одговорите треба да бидат само бројни вредности (без мерни единици како cm, kg итн.). 
-        Користи точка (.) како децимален сепаратор.
-        За секоја задача генерирај точно 4 опции за избор (една точна и три неточни).
-        Врати ги во JSON формат како низа од објекти со својства: question, answer, options (низа од точно 4 опции), explanation.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                question: { type: Type.STRING },
-                answer: { type: Type.STRING },
-                options: { 
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING }
-                },
-                explanation: { type: Type.STRING }
-              },
-              required: ["question", "answer", "options"]
-            }
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `Генерирај ${count || 10} математички задачи за ${grade} одделение, на тема "${topic}" и содржина "${content}". Врати ги во JSON формат.`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              question: { type: Type.STRING },
+              answer: { type: Type.STRING },
+              options: { type: Type.ARRAY, items: { type: Type.STRING } },
+              explanation: { type: Type.STRING }
+            },
+            required: ["question", "answer", "options"]
           }
         }
-      });
-
-      const problems = JSON.parse(response.text || "[]");
-      
-      // Save to cache
-      if (db) {
-        try {
-          db.prepare("INSERT INTO math_cache (grade, topic, content, problems) VALUES (?, ?, ?, ?)")
-            .run(grade, topic, content, JSON.stringify(problems));
-        } catch (e) {
-          console.error("Cache write error:", e);
-        }
       }
-
-      res.json(problems.slice(0, count));
-    } catch (error) {
-      console.error("Gemini Error:", error);
-      res.status(500).json({ error: "Failed to generate problems" });
-    }
-  });
-
-// Mount the router
-app.use("/api", apiRouter);
-app.use("/", apiRouter); // Fallback for rewrites
-
-// Catch-all for API routes to return JSON instead of HTML
-app.all("/api/*", (req, res) => {
-  res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
+    });
+    res.json(JSON.parse(response.text || "[]"));
+  } catch (error) {
+    res.status(500).json({ error: "Failed to generate problems" });
+  }
 });
 
-// Vite middleware for development
-if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
-  const { createServer: createViteServer } = await import("vite");
-  const vite = await createViteServer({
-    server: { middlewareMode: true },
-    appType: "spa",
-  });
-  app.use(vite.middlewares);
-} else if (!process.env.VERCEL) {
-  // Only serve static files if NOT on Vercel (Vercel handles this via rewrites)
+// Mount API routes
+app.use("/api", apiRouter);
+
+// Serve static files in production
+if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
   app.use(express.static(path.join(__dirname, "dist")));
   app.get("*", (req, res) => {
     res.sendFile(path.join(__dirname, "dist", "index.html"));
   });
 }
 
-// Only listen if not on Vercel
 if (!process.env.VERCEL) {
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on port ${PORT}`);
   });
 }
