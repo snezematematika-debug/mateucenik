@@ -23,10 +23,31 @@ if (!process.env.VERCEL) {
         content TEXT,
         problems TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
+      );
+      
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE,
+        xp INTEGER DEFAULT 0,
+        total_score INTEGER DEFAULT 0,
+        level INTEGER DEFAULT 1,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT,
+        game_type TEXT,
+        score INTEGER,
+        xp_gained INTEGER,
+        grade TEXT,
+        topic TEXT,
+        content TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
     `);
   } catch (e) {
-    console.warn("SQLite database could not be initialized. Caching will be disabled.");
+    console.warn("SQLite database could not be initialized. Caching and user progress will be disabled.");
   }
 }
 
@@ -35,6 +56,79 @@ const PORT = 3000;
 
 app.use(cors());
 app.use(express.json());
+
+// API Route for user progress
+app.get("/api/user/:username", (req, res) => {
+  if (!db) return res.status(503).json({ error: "Database not available" });
+  
+  const { username } = req.params;
+  try {
+    let user = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
+    if (!user) {
+      // Create user if not exists
+      db.prepare("INSERT INTO users (username) VALUES (?)").run(username);
+      user = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
+    }
+    res.json(user);
+  } catch (e) {
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.post("/api/user/progress", (req, res) => {
+  if (!db) return res.status(503).json({ error: "Database not available" });
+  
+  const { username, xp, total_score, level } = req.body;
+  try {
+    db.prepare(`
+      UPDATE users 
+      SET xp = ?, total_score = ?, level = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE username = ?
+    `).run(xp, total_score, level, username);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+// API Route for game history
+app.post("/api/history", (req, res) => {
+  if (!db) return res.status(503).json({ error: "Database not available" });
+  
+  const { username, game_type, score, xp_gained, grade, topic, content } = req.body;
+  try {
+    db.prepare(`
+      INSERT INTO history (username, game_type, score, xp_gained, grade, topic, content)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(username, game_type, score, xp_gained, grade, topic, content);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.get("/api/history/:username", (req, res) => {
+  if (!db) return res.status(503).json({ error: "Database not available" });
+  
+  const { username } = req.params;
+  try {
+    const history = db.prepare("SELECT * FROM history WHERE username = ? ORDER BY created_at DESC LIMIT 20").all();
+    res.json(history);
+  } catch (e) {
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.get("/api/leaderboard", (req, res) => {
+  if (!db) return res.status(503).json({ error: "Database not available" });
+  
+  try {
+    const topUsers = db.prepare("SELECT username, xp, level, total_score FROM users ORDER BY xp DESC LIMIT 10").all();
+    res.json(topUsers);
+  } catch (e) {
+    res.status(500).json({ error: "Database error" });
+  }
+});
 
 // API Route for generating problems
 app.post("/api/problems", async (req, res) => {
