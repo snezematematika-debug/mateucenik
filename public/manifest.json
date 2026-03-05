@@ -1,0 +1,21 @@
+{
+  "name": "Мате ученик",
+  "short_name": "Мате",
+  "description": "Интерактивна апликација за учење математика",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "https://picsum.photos/seed/math/192/192",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://picsum.photos/seed/math/512/512",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
